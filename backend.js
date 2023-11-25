@@ -14,6 +14,8 @@ app.get('/',(req,res)=>{
 })
 app.listen(port)
 
+
+
 const security =(req,res,next)=>{
   const token = req.cookies.token;
   if(!token){
@@ -50,17 +52,51 @@ async function run() {
 const db = client.db('Employee-management');
 const usersCollection = db.collection('Users');
 const paymentCollection = db.collection('Payments');
-
+const workSheetCollection = db.collection('Worksheets')
 app.get('/api/v1/users',async(req,res)=>{
   const result = await usersCollection.find().toArray();
   res.send(result)
 })
-
-
+app.get('/api/v1/employee/:email',async(req,res)=>{
+  const email = req.params.email;
+  const query = {
+    email
+  }
+const employee = await usersCollection.findOne(query);
+const salaryHistory = await paymentCollection.find({employee: email}).toArray();
+res.send({employee,salaryHistory})
+})
+app.get('/api/v1/employee/payment/history/:email',async(req,res)=>{
+  const email = req.params.email;
+  const query = {
+    employee: email
+  }
+  const result = await paymentCollection.find(query).toArray();
+  res.send(result)
+})
+app.get('/api/v1/worksheets/:email',async(req,res)=>{
+  const email = req.params.email;
+  const query = {
+    email
+  }
+  const result = await workSheetCollection.find(query).toArray();
+  res.send(result)
+})
+app.get('/api/v1/worksheets/employees/get',async(req,res)=>{
+  const name = req.query.name;
+    let query = {};
+    if(name !== 'All'){
+      query.name = name
+    }
+    const result = await workSheetCollection.find(query).toArray();
+    res.send(result)
+  
+})
 app.post('/api/v1/user/new',async(req,res)=>{
     const user = req.body;
     const result = await usersCollection.insertOne(user);
     res.send(result);
+    
 })
 
 app.post('/api/v1/jwt',(req,res)=>{
@@ -94,6 +130,11 @@ app.post('/api/v1/employee/payment',async(req,res)=>{
   res.send(result)
 })
 
+app.post('/api/v1/worksheet/add',async(req,res)=>{
+  const worksheet = req.body;
+  const result = await workSheetCollection.insertOne(worksheet);
+  res.send(result)
+})
 app.patch('/api/v1/update/user/:id',async(req,res)=>{
   const query = {
     _id: new ObjectId(req.params.id)
