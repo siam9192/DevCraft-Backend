@@ -8,7 +8,7 @@ const app = express();
 // "http://localhost:5173","https://grand-luminary.web.app/",
 app.use(cors())
 app.use(express.json());
-// app.use(cookieParser());
+const stripe = require('stripe')(process.env.PAYMENT_SECRET);
 app.get('/',(req,res)=>{
     res.send('working')
 })
@@ -49,6 +49,7 @@ async function run() {
   try {
 const db = client.db('Employee-management');
 const usersCollection = db.collection('Users');
+const paymentCollection = db.collection('Payments');
 
 app.get('/api/v1/users',async(req,res)=>{
   const result = await usersCollection.find().toArray();
@@ -68,6 +69,29 @@ const token =   jwt.sign(user,process.env.ACCESS_TOKEN,{
     expiresIn:'30d'
   })
   res.send({token})
+})
+
+
+// stripe payment
+app.post('/api/v1/paymentSecret',async(req,res)=>{
+  const amount = req.body.amount * 100;
+  const paymentIntent = await stripe.paymentIntents.create({
+    amount:amount,
+    currency: 'usd',
+    payment_method_types: ['card']
+  })
+  
+ res.send({
+  client_secret: paymentIntent.client_secret
+ })
+ 
+})
+
+app.post('/api/v1/employee/payment',async(req,res)=>{
+  const payment = req.body;
+  console.log(payment)
+  const result = await paymentCollection.insertOne(payment);
+  res.send(result)
 })
 
 app.patch('/api/v1/update/user/:id',async(req,res)=>{
