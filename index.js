@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const port = 8000;
+const port = process.env.PORT || 8000;
 
 const jwt = require('jsonwebtoken');
 require('dotenv').config()
@@ -32,7 +32,7 @@ if(err){
   res.status(401).send({status:'unauthorized'})
   return;
 }
-
+console.log(token,decode)
 req.user = decode;
 next();
   })
@@ -112,17 +112,16 @@ const verifyHrOrAdmin = async(req,res,next)=>{
 
 app.get('/api/v1/hr/users',security,verifyHrOrAdmin,async(req,res)=>{
   const currentPage =parseInt( req.query.currentPage) -1 ;
-  const users = await usersCollection.find().skip(currentPage * 5).limit(5).toArray();
+  const users = await usersCollection.find({isFired:false}).skip(currentPage * 5).limit(5).toArray();
   const usersCount = await usersCollection.estimatedDocumentCount();
   const result = {
     users,
     totalUsers: usersCount
   }
-  
   res.send(result)
 })
 app.get('/api/v1/admin/users',security,verifyAdmin,async(req,res)=>{
-  const result = await usersCollection.find().toArray();
+  const result = await usersCollection.find({isVerified:true}).toArray();
   res.send(result)
 })
 app.get('/api/v1/employee/:email',security,verifyHrOrAdmin,async(req,res)=>{
@@ -147,13 +146,16 @@ app.post('/api/v1/isFired',async(req,res)=>{
   }
   res.send({isFired:false})
 })
-app.get('/api/v1/employee/payment/history/:email',async(req,res)=>{
+app.get('/api/v1/employee/payment/history/:email',security,async(req,res)=>{
   const email = req.params.email;
   const query = {
     employee: email
   }
   const result = await paymentCollection.find(query).toArray();
   res.send(result)
+})
+app.get('/api/v1/recent-payment',security,verifyHrOrAdmin,async(req,res)=>{
+const result = await paymentCollection.find().toArray();
 })
 app.get('/api/v1/users',security,verifyHrOrAdmin,async(req,res)=>{
   const result = await usersCollection.find().project({name:1}).toArray();
@@ -184,11 +186,12 @@ app.get('/api/v1/checkUser/:email',async(req,res)=>{
   const role = findUser.role;
   res.send({role})
 })
-app.get('/api/v1/dashboard/admin',async(req,res)=>{
+app.get('/api/v1/dashboard/admin',security,verifyAdmin,async(req,res)=>{
   const total_employees =  (await usersCollection.estimatedDocumentCount());
 const salaries = await paymentCollection.find().toArray();
 const worksheets = await workSheetCollection.estimatedDocumentCount();
 const fired = (await usersCollection.find({isFired:true}).toArray()).length;
+const recentPayment = (await paymentCollection.find().toArray()).reverse().slice(0,5);
 const totalSalaries = await paymentCollection.aggregate([
   {
     $group:{
@@ -201,8 +204,33 @@ const totalSalaries = await paymentCollection.aggregate([
 ]).toArray()
 
 // console.log(total_employees,worksheets,salaries,fired)
-res.send({total_employees,worksheets,salaries,totalPayedSalaries:totalSalaries[0].total,fired})
+res.send({total_employees,worksheets,salaries,totalPayedSalaries:totalSalaries[0].total,recentPayment,fired})
 })
+app.get('/api/v1/dashboard/hr',async(req,res)=>{
+  const total_employees =  (await usersCollection.estimatedDocumentCount());
+const salaries = await paymentCollection.find().toArray();
+const worksheets = await workSheetCollection.estimatedDocumentCount();
+const fired = (await usersCollection.find({isFired:true}).toArray()).length;
+const admin = await usersCollection.findOne({role:'admin'})
+const hr = await usersCollection.find({role:'hr',isFired:false}).toArray()
+const totalSalaries = await paymentCollection.aggregate([
+  {
+    $group:{
+      _id: null,
+      total:{
+        $sum: '$amount'
+      }
+    }
+  }
+]).toArray()
+const roles = {
+  admin,
+  hr
+}
+
+res.send({total_employees,worksheets,salaries,totalPayedSalaries:totalSalaries[0].total,roles,admin,fired})
+})
+
 
 app.get('/api/v1/dashboard/employee/:email',async(req,res)=>{
   const email = req.params.email;
