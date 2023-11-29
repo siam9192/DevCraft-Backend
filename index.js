@@ -112,8 +112,8 @@ const verifyHrOrAdmin = async(req,res,next)=>{
 
 app.get('/api/v1/hr/users',security,verifyHrOrAdmin,async(req,res)=>{
   const currentPage =parseInt( req.query.currentPage) -1 ;
-  const users = await usersCollection.find({isFired:false}).skip(currentPage * 5).limit(5).toArray();
-  const usersCount = await usersCollection.estimatedDocumentCount();
+  const users = await usersCollection.find({isFired:false,role:'employee'}).skip(currentPage * 5).limit(5).toArray();
+  const usersCount = (await usersCollection.find({isFired:false,role:'employee'}).toArray()).length;
   const result = {
     users,
     totalUsers: usersCount
@@ -146,17 +146,19 @@ app.post('/api/v1/isFired',async(req,res)=>{
   }
   res.send({isFired:false})
 })
-app.get('/api/v1/employee/payment/history/:email',security,async(req,res)=>{
+app.get('/api/v1/employee/payment/history/:email/:currentPage',security,async(req,res)=>{
   const email = req.params.email;
+  const currentPage = req.params.currentPage;
+  if(req.user.email !== email){
+ return res.send({status:'unauthorized'})
+  }
   const query = {
     employee: email
   }
-  const result = await paymentCollection.find(query).toArray();
+  const result = await paymentCollection.find(query).skip((currentPage-1)*5).limit(5).toArray();
   res.send(result)
 })
-app.get('/api/v1/recent-payment',security,verifyHrOrAdmin,async(req,res)=>{
-const result = await paymentCollection.find().toArray();
-})
+
 app.get('/api/v1/users',security,verifyHrOrAdmin,async(req,res)=>{
   const result = await usersCollection.find().project({name:1}).toArray();
   res.send(result)
@@ -236,11 +238,12 @@ app.get('/api/v1/dashboard/employee/:email',async(req,res)=>{
   const email = req.params.email;
   const query = {email};
   const employee = await usersCollection.findOne(query);
-  const worksheets = (await workSheetCollection.find(query).toArray()).length;
-  const salaries = await paymentCollection.find(query).toArray();
+  const worksheets = await workSheetCollection.find(query).toArray();
+  const salaries = await paymentCollection.find({employee:email}).toArray();
   const total_salaries = salaries.reduce((prev,curr)=> prev + curr.amount,0);
-  
-   res.send({employee,worksheets,total_salaries})
+  const salaryCount = (await paymentCollection.find({employee: email}).toArray()).length;
+
+   res.send({employee,worksheets,total_salaries,salaries,salaryCount})
 
 })
 
@@ -287,9 +290,16 @@ app.post('/api/v1/paymentSecret',async(req,res)=>{
  
 })
 
-app.post('/api/v1/employee/payment',async(req,res)=>{
+app.post('/api/v1/employee/payment',security,async(req,res)=>{
+
   const payment = req.body;
-  console.log(payment)
+
+  const checkPayment = await paymentCollection.findOne({employee:payment.employee,month:payment.month,year:payment.year});
+  console.log(checkPayment)
+  if(checkPayment){
+   res.send('found')
+   return;
+  }
   const result = await paymentCollection.insertOne(payment);
   res.send(result)
 })
