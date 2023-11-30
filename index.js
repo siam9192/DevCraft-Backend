@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const port = process.env.PORT || 8000;
+const port = process.env.PORT || 5000;
 
 const jwt = require('jsonwebtoken');
 require('dotenv').config()
@@ -120,9 +120,14 @@ app.get('/api/v1/hr/users',security,verifyHrOrAdmin,async(req,res)=>{
   }
   res.send(result)
 })
-app.get('/api/v1/admin/users',security,verifyAdmin,async(req,res)=>{
-  const result = await usersCollection.find({isVerified:true}).toArray();
-  res.send(result)
+app.get('/api/v1/admin/users/:currentPage',security,verifyAdmin,async(req,res)=>{
+ 
+  const currentPage = req.params.currentPage;
+  console.log(currentPage)
+  const find = await usersCollection.find({isVerified:true}).skip(parseInt(currentPage-1) * 5).limit(5).toArray();
+  const employeesCount = (await usersCollection.find({isVerified:true}).toArray()).length
+  const result = find.filter(item => item.role !== 'admin')
+  res.send({result,employeesCount})
 })
 app.get('/api/v1/employee/:email',security,verifyHrOrAdmin,async(req,res)=>{
   const email = req.params.email;
@@ -183,8 +188,10 @@ app.get('/api/v1/worksheets/employees/get',security,verifyHrOrAdmin,async(req,re
 })
 app.get('/api/v1/checkUser/:email',async(req,res)=>{
   const email = req.params.email;
+  console.log(email)
   const query = {email};
   const findUser = await usersCollection.findOne(query);
+  
   const role = findUser.role;
   res.send({role})
 })
@@ -209,6 +216,7 @@ const totalSalaries = await paymentCollection.aggregate([
 res.send({total_employees,worksheets,salaries,totalPayedSalaries:totalSalaries[0].total,recentPayment,fired})
 })
 app.get('/api/v1/dashboard/hr',async(req,res)=>{
+  
   const total_employees =  (await usersCollection.estimatedDocumentCount());
 const salaries = await paymentCollection.find().toArray();
 const worksheets = await workSheetCollection.estimatedDocumentCount();
@@ -229,6 +237,7 @@ const roles = {
   admin,
   hr
 }
+
 
 res.send({total_employees,worksheets,salaries,totalPayedSalaries:totalSalaries[0].total,roles,admin,fired})
 })
