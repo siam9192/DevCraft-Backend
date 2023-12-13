@@ -61,6 +61,7 @@ const db = client.db('Employee-management');
 const usersCollection = db.collection('Users');
 const paymentCollection = db.collection('Payments');
 const workSheetCollection = db.collection('Worksheets')
+const leavesCollection = db.collection('Leaves')
 
 const verifyAdmin = async (req,res,next)=>{
   const email = req.user.email;
@@ -75,8 +76,11 @@ const verifyAdmin = async (req,res,next)=>{
 }
 
 const verifyHrOrAdmin = async(req,res,next)=>{
-  const email = req.user.email;
+  const email = req.user?.email;
   console.log(email)
+  if(!email){
+    return
+  }
   const findUser = await usersCollection.findOne({email});
   
   if(!findUser){
@@ -165,24 +169,62 @@ app.get('/api/v1/employee/payment/history/:email/:currentPage',security,async(re
 })
 
 app.get('/api/v1/users',security,verifyHrOrAdmin,async(req,res)=>{
-  const result = await usersCollection.find().project({name:1}).toArray();
-  res.send(result)
+  const result = await usersCollection.find({isVerified:true,isFired:false}).project({name:1,email:1,role:1}).toArray();
+  const filter = result.filter(item => item.role !== 'admin' || item.role !== 'hr')
+  console.log(filter)
+  res.send(filter)
 })
-app.get('/api/v1/worksheets/:email',async(req,res)=>{
+app.get('/api/v1/user/info/:email',async(req,res)=>{
+  const email = req.params.email;
+  const result = await usersCollection.findOne({email:email});
+  res.send(result);
+})
+app.put('/api/v1/update/user/profile',async(req,res)=>{
+  const userInfo = req.body;
+  const filter = {_id: new ObjectId(userInfo.id)}
+  const doc1 = {
+    name:userInfo.name,
+    email:userInfo.email,
+    bankAccount:userInfo.bankAccount,
+    phone:userInfo.phone
+  }
+  const doc2 = {
+    name:userInfo.name,
+    email:userInfo.email,
+    image:userInfo.image,
+    bankAccount:userInfo.bankAccount,
+    phone:userInfo.phone
+  }
+  const updatedDoc = {
+  
+}
+if(!userInfo.image){
+ updatedDoc.$set = doc1
+}
+else{
+  updatedDoc.$set = doc2
+}
+const result = await usersCollection.updateOne(filter,updatedDoc);
+res.send(result)
+
+})
+app.get('/api/v1/worksheets/:email',security,async(req,res)=>{
   const email = req.params.email;
   const query = {
     email
   }
   const result = (await workSheetCollection.find(query).sort({length: -1}).toArray()).reverse();
+
   res.send(result)
 })
 app.get('/api/v1/worksheets/employees/get',security,verifyHrOrAdmin,async(req,res)=>{
   const name = req.query.name;
     let query = {};
     if(name !== 'All'){
-      query.name = name
+      query.email = name
     }
-    const result = await workSheetCollection.find(query).toArray();
+    const result = (await workSheetCollection.find(query).toArray());
+  
     res.send(result)
   
 })
@@ -318,6 +360,35 @@ app.post('/api/v1/worksheet/add',async(req,res)=>{
   const result = await workSheetCollection.insertOne(worksheet);
   res.send(result)
 })
+// leaves related api
+app.post('/api/v1/leave/apply',async(req,res)=>{
+  const apply = req.body;
+  const findApply = await leavesCollection.findOne({email:apply.email,status:'Pending',isCanceled:false})
+  if(findApply){
+    res.send({result:'found'})
+    return;
+  }
+  const result = await leavesCollection.insertOne(apply);
+  res.send(result)
+})
+app.get('/api/v1/leaves/employee/:email',async(req,res)=>{
+  const email = req.params.email;
+  const result = await leavesCollection.find({email}).toArray();
+  res.send(result)
+
+})
+app.patch('/api/v1/leave/apply/cancel',async(req,res)=>{
+  const id = req.body;
+  const filter = {_id: new ObjectId(id)}
+  const updatedDoc = {
+    $set:{
+      isCanceled: true
+    }
+  }
+  const result = await leavesCollection.updateOne(filter,updatedDoc);
+  console.log(result)
+  res.send(result)
+})
 app.patch('/api/v1/update/user/:id',async(req,res)=>{
   const query = {
     _id: new ObjectId(req.params.id)
@@ -327,11 +398,34 @@ app.patch('/api/v1/update/user/:id',async(req,res)=>{
     $set: user
   }
   const result = await usersCollection.updateOne(query,updatedDoc);
+  
   res.send(result)
 
 })
-
-app.patch('/api/v1/fire-employee/:email',async(req,res)=>{
+app.get('/api/v1/leaves/request',async(req,res)=>{
+  const result = await leavesCollection.find({status:'Pending',isCanceled:false}).toArray()
+  console.log(result)
+  res.send(result)
+})
+app.patch('/api/v1/update/status',async(req,res)=>{
+  const query = req.body;
+  const filter = {
+    _id: new ObjectId(query.id)
+  }
+  const updatedDoc = {
+    $set:{
+      status: query.status
+    }
+  
+  }
+  const result = await leavesCollection.updateOne(filter,updatedDoc)
+  res.send(result)
+})
+app.get('/api/v1/check/leave/:email',async(req,res)=>{
+  const email = req.params.email;
+  const result = await leavesCollection.find({email,status:'approved'}).toArray()[-1];
+})
+app.patch('/api/v1/fire-employee/:email',verifyHrOrAdmin,async(req,res)=>{
   const email = req.params.email;
   const query ={
     email
